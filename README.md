@@ -36,3 +36,23 @@ PATH=$HOME/.kube/kubectl:$PATH
 # Load all the config files in the .kube directory
 export KUBECONFIG=$(find ~/.kube -name 'config*' | sort | tr '\n' ':')
 ```
+
+## LastPass Integration
+1. Create a new custom type in Lastpass.
+
+<img src="/img/lp1.png" width="500" />
+
+
+2. Name it `Kubernetes-Config-Raw` and make sure it has a single `notes` field.
+
+<img src="/img/lp2.png" width="500" />
+
+
+3. Create a new `Kubernetes-Config-Raw` record and name it something useful to you. Put the contents of your kube config for that single cluster in the `Notes` input.
+
+<img src="/img/lp3.png" width="500" />
+
+
+4. Make sure your `Kubernetes-Config-Raw` records are in the `kubernetes-configs` (all lowercase) folder.
+
+<img src="/img/lp4.png" width="500" />
