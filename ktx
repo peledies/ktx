@@ -6,7 +6,6 @@
 
 red=$(tput setaf 1)
 gold=$(tput setaf 3)
-blue=$(tput setaf 4)
 magenta=$(tput setaf 5)
 cyan=$(tput setaf 6)
 default=$(tput sgr0)
@@ -129,6 +128,11 @@ function kubectl_get() {
 }
 
 function kubectl_pull() {
+
+  if ! command -v lpass &> /dev/null; then
+    echo -e "${red}lpass could not be found. Please install LastPass CLI.${default}"
+    kill -INT $$
+  fi
 
   # this is the "folder" in lastpass
   NAMESPACE="kubernetes-configs"
