@@ -38,6 +38,8 @@ export KUBECONFIG=$(find ~/.kube -name 'config*' | sort | tr '\n' ':')
 ```
 
 ## LastPass Integration
+In order for `KTX` to find your kubernetes configs in your lastpass, you need to set up a folder for them and they need to be of a specific custom item type.
+
 1. Create a new custom type in Lastpass.
 
 <img src="/img/lp1.png" width="500" />
