@@ -6,6 +6,7 @@
 
 red=$(tput setaf 1)
 gold=$(tput setaf 3)
+blue=$(tput setaf 4)
 magenta=$(tput setaf 5)
 cyan=$(tput setaf 6)
 default=$(tput sgr0)
@@ -23,6 +24,17 @@ echo "██║  ██╗   ██║   ██╔╝ ██╗"
 echo "╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝"
 echo -e "${gold}Kubectl Context Switcher\n\n${default}"
 
+function check_dependencies() {
+  if ! command -v jq &> /dev/null; then
+    echo -e "${red}Error: jq is required but not installed.${default}"
+    echo -e "${cyan}Please install jq to use this script:${default}"
+    echo -e "${cyan}  macOS: brew install jq${default}"
+    echo -e "${cyan}  Ubuntu/Debian: sudo apt-get install jq${default}"
+    echo -e "${cyan}  CentOS/RHEL: sudo yum install jq${default}"
+    kill -INT $$
+  fi
+}
+
 function verify_path() {
   if [[ ":$PATH:" != *":$symlink_path:"* ]]; then
     echo -e "${red}The directory $symlink_path is not in your PATH.${default}"
@@ -35,7 +47,7 @@ function verify_path() {
 function verify_symlink() {
   if [ ! -L $symlink_path/kubectl ]; then
     echo -e "${red}kubectl symlink does not exist. \nLets get you a version of kubectl${default}"
-    kubectl_get
+    kubectl_manage
     kill -INT $$
   fi
 }
@@ -60,37 +72,130 @@ function switch_context() {
   done
 }
 
-function kubectl_use() {
+function kubectl_manage() {
+  # Get list of already installed versions
+  local installed_versions=()
+  if [ -d "$bin_dir" ] && [ "$(ls -A $bin_dir 2>/dev/null)" ]; then
+    local files=("$bin_dir"/*)
+    for file in "${files[@]}"; do
+      if [ -f "$file" ]; then
+        installed_versions+=("${file##*/}")
+      fi
+    done
+  fi
 
-  # Get the list of files in the bin directory and store them in an array.
-  files=("$bin_dir"/*)
+  # Display installed versions if any exist
+  if [ ${#installed_versions[@]} -gt 0 ]; then
+    echo -e "\n${gold}Currently installed kubectl versions:${default}"
+    for version in $(printf '%s\n' "${installed_versions[@]}" | sort -V -r); do
+      # Check if this version is currently active
+      if [ -L "$symlink_path/kubectl" ]; then
+        current_version=$(readlink "$symlink_path/kubectl")
+        current_version=${current_version##*/}
+        if [[ "$version" == "$current_version" ]]; then
+          echo -e "  ${magenta}$version${default} ${cyan}(active)${default}"
+        else
+          echo -e "  ${magenta}$version${default}"
+        fi
+      else
+        echo -e "  ${magenta}$version${default}"
+      fi
+    done
+    echo ""
+  fi
 
-  # This script processes an array of file paths and modifies each element to retain only the file name,
-  # stripping away the directory path. The resulting array will contain just the base names of the files.
-  files=("${files[@]##*/}")
+  # Fetch available versions from GitHub
+  echo -e "${cyan}Fetching available kubectl versions...${default}"
+  local online_releases=$(curl -s --max-time 10 "https://api.github.com/repos/kubernetes/kubernetes/releases?per_page=30" | \
+    jq -r '.[] | select(.prerelease == false) | .tag_name' 2>/dev/null | \
+    head -10 | \
+    sort -V -r)
 
-  echo -e "\n${gold}Select kubectl version to use:${default}"
-  # Prompt the user to select a file from the array.
-  PS3="${cyan}Select installed version: $gold"
-  select file in "${files[@]}"; do
-    case "$file" in
+  # Build the selection menu
+  local options=()
+  local option_types=()
+
+  # Add installed versions for switching
+  if [ ${#installed_versions[@]} -gt 0 ]; then
+    options+=("=== SWITCH TO INSTALLED VERSION ===")
+    option_types+=("header")
+    for version in $(printf '%s\n' "${installed_versions[@]}" | sort -V -r); do
+      options+=("$version")
+      option_types+=("installed")
+    done
+  fi
+
+  # Add online versions
+  if [[ -n "$online_releases" ]]; then
+    options+=("=== DOWNLOAD NEW VERSIONS ===")
+    option_types+=("header")
+    while IFS= read -r version; do
+      # Check if this version is already installed
+      version_clean=${version#v}
+      if [[ ! " ${installed_versions[@]} " =~ " v${version_clean} " ]]; then
+        options+=("$version")
+        option_types+=("download")
+      fi
+    done <<< "$online_releases"
+  fi
+
+  # Add manual entry option
+  options+=("=== OTHER OPTIONS ===")
+  option_types+=("header")
+  options+=("Enter custom version")
+  option_types+=("custom")
+
+  if [ ${#options[@]} -eq 0 ]; then
+    echo "${red}No kubectl versions found. Please check your setup.${default}"
+    kill -INT $$
+  fi
+
+  echo -e "${gold}Select kubectl version to use or download:${default}"
+  PS3="${cyan}Select version: $gold"
+  select opt in "${options[@]}"; do
+    case "$opt" in
       "")
         echo "${red}Invalid Option ${magenta}CTL + C to quit${default}"
-      ;;  # This is a fake; any invalid entry makes $context=="", not just "q".
-      *)
-        # update the symlink to point to the selected file
-        echo "kubectl set to version: ${magenta}$file${default}"
-        ln -nsf $bin_dir/${file} $symlink_path/kubectl
+        ;;
+      "=== SWITCH TO INSTALLED VERSION ===" | "=== DOWNLOAD NEW VERSIONS ===" | "=== OTHER OPTIONS ===")
+        echo "${cyan}Please select a specific version${default}"
+        ;;
+      "Enter custom version")
+        read -p "${cyan}Enter the kubectl version to get (e.g., 1.29.0): ${default}" custom_version
+        # Validate custom version format
+        if [[ ! "$custom_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]; then
+          echo "${red}Invalid version format. Please use format like: 1.29.0${default}"
+          continue
+        fi
+        version="v${custom_version}"
+        action="download"
         break
-      ;;
+        ;;
+      *)
+        # Determine if this is an installed version or download version
+        if [[ " ${installed_versions[@]} " =~ " ${opt} " ]]; then
+          version="$opt"
+          action="switch"
+        else
+          version="$opt"
+          action="download"
+        fi
+        break
+        ;;
     esac
   done
 
+  version_clean=${version#v}
 
-}
+  if [[ "$action" == "switch" ]]; then
+    # Switch to already installed version
+    echo "kubectl set to version: ${magenta}$version${default}"
+    ln -nsf $bin_dir/$version $symlink_path/kubectl
+    echo -e "${gold}kubectl $version is now active!${default}"
+    return
+  fi
 
-function kubectl_get() {
-  read -p "${cyan}Enter the kubectl version to get: ${default}" version
+  # Download new version
   echo "${magenta}You have selected kubectl version: ${version}${default}"
 
   if [[ $(uname -m) == "x86_64" ]]; then
@@ -118,21 +223,26 @@ function kubectl_get() {
   mkdir -p $bin_dir
 
   echo -e "${cyan}Downloading kubectl version: ${magenta}${version}${default}"
-  curl -Ls "https://dl.k8s.io/release/v${version}/bin/${os}/${arch}/kubectl" -o $bin_dir/v${version}
+
+  # Check if download is successful
+  if curl -Ls --max-time 30 "https://dl.k8s.io/release/v${version_clean}/bin/${os}/${arch}/kubectl" -o $bin_dir/v${version_clean}; then
+    echo -e "${cyan}Download successful!${default}"
+  else
+    echo "${red}Download failed. Please check the version and try again.${default}"
+    rm -f $bin_dir/v${version_clean}
+    kill -INT $$
+  fi
 
   echo -e "${cyan}Creating symlink to kubectl version: ${magenta}${version}${default}"
-  ln -nsf $bin_dir/v${version} $symlink_path/kubectl
+  ln -nsf $bin_dir/v${version_clean} $symlink_path/kubectl
 
   echo -e "${cyan}Setting execute permissions for kubectl${default}"
   chmod +x $symlink_path/kubectl
+
+  echo -e "${gold}kubectl ${version} has been successfully installed and is now active!${default}"
 }
 
 function kubectl_pull() {
-
-  if ! command -v lpass &> /dev/null; then
-    echo -e "${red}lpass could not be found. Please install LastPass CLI.${default}"
-    kill -INT $$
-  fi
 
   # this is the "folder" in lastpass
   NAMESPACE="kubernetes-configs"
@@ -151,23 +261,20 @@ function kubectl_pull() {
   done
 }
 
+check_dependencies
 verify_path
 verify_symlink
 
 PS3="${cyan}Select an option: $gold"
-options=("Switch context" "Use kubectl version" "Get kubectl version" "Get config from lastpass")
+options=("Switch context" "Manage kubectl versions" "Get config from lastpass")
 select opt in "${options[@]}"; do
   case $opt in
     "Switch context")
       switch_context
       break
       ;;
-    "Use kubectl version")
-      kubectl_use
-      break
-      ;;
-    "Get kubectl version")
-      kubectl_get
+    "Manage kubectl versions")
+      kubectl_manage
       break
       ;;
     "Get config from lastpass")
