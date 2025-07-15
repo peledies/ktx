@@ -16,8 +16,13 @@ Kubectl Context Switcher
 
 ```
 brew tap peledies/formulae
-
 brew install ktx
+```
+
+## Upgrading
+```
+brew update
+brew upgrade ktx
 ```
 
 ## Configuration
