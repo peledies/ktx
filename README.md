@@ -27,6 +27,7 @@ brew upgrade ktx
 
 ## Configuration
 `Ktx` requires a few modifications to your profile to work effectively.
+> NOTE: as of version `0.4.0` ktx will help you create the required modifications to your path and profile.
 
 ### PATH
 Add the following lines to your profile `~/.bash_profile`, `~/.bashrc` or `~/.zshrc`

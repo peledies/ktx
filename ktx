@@ -35,10 +35,94 @@ function check_dependencies() {
   fi
 }
 
+function setup_profile() {
+  local profile_file=""
+  local profile_options=("~/.zshrc" "~/.bash_profile" "~/.bashrc" "Enter custom path")
+
+  echo -e "${gold}Which profile file would you like to configure?${default}"
+  echo -e "${cyan}Current shell: ${magenta}$SHELL${default}\n"
+
+  PS3="${cyan}Select profile file: $gold"
+  select profile_choice in "${profile_options[@]}"; do
+    case "$profile_choice" in
+      "~/.zshrc")
+        profile_file="$HOME/.zshrc"
+        break
+        ;;
+      "~/.bash_profile")
+        profile_file="$HOME/.bash_profile"
+        break
+        ;;
+      "~/.bashrc")
+        profile_file="$HOME/.bashrc"
+        break
+        ;;
+      "Enter custom path")
+        read -p "${cyan}Enter the full path to your profile file: ${default}" custom_path
+        # Expand tilde if present
+        profile_file="${custom_path/#\~/$HOME}"
+        break
+        ;;
+      "")
+        echo "${red}Invalid Option${default}"
+        ;;
+      *)
+        echo "${red}Invalid selection${default}"
+        ;;
+    esac
+  done
+
+  local path_line="PATH=\$HOME/.kube/kubectl:\$PATH"
+  local kubeconfig_line="export KUBECONFIG=\$(find ~/.kube -name 'config*' | sort | tr '\n' ':')"
+  local path_comment="# KTX - Kubectl versions installed with ktx"
+  local kubeconfig_comment="# KTX - Load all the config files in the .kube directory"
+
+  local changes_made=false
+
+  # Create profile file if it doesn't exist
+  if [[ ! -f "$profile_file" ]]; then
+    touch "$profile_file"
+    echo -e "${cyan}Created profile file: ${magenta}$profile_file${default}"
+  fi
+
+  # Check and add PATH configuration
+  if ! grep -Fq "$path_line" "$profile_file"; then
+    echo -e "${cyan}Adding kubectl PATH configuration to ${magenta}$profile_file${default}"
+    echo "" >> "$profile_file"
+    echo "$path_comment" >> "$profile_file"
+    echo "$path_line" >> "$profile_file"
+    changes_made=true
+  fi
+
+  # Check and add KUBECONFIG configuration
+  if ! grep -Fq "$kubeconfig_line" "$profile_file"; then
+    echo -e "${cyan}Adding KUBECONFIG configuration to ${magenta}$profile_file${default}"
+    echo "" >> "$profile_file"
+    echo "$kubeconfig_comment" >> "$profile_file"
+    echo "$kubeconfig_line" >> "$profile_file"
+    changes_made=true
+  fi
+
+  if [[ "$changes_made" == true ]]; then
+    echo -e "${gold}Profile configuration updated successfully!${default}"
+    echo -e "${cyan}Please run ${magenta}source $profile_file${cyan} or restart your terminal to apply changes.${default}"
+  else
+    echo -e "${gold}Profile is already configured correctly.${default}"
+  fi
+}
+
 function verify_path() {
   if [[ ":$PATH:" != *":$symlink_path:"* ]]; then
     echo -e "${red}The directory $symlink_path is not in your PATH.${default}"
-    echo -e "${gold}You need to add the following to your PATH:\n - ${magenta}\$HOME/$symlink_dir${default}"
+    echo -e "${gold}Would you like ktx to automatically configure your profile? (y/n)${default}"
+    read -r response
+
+    if [[ "$response" =~ ^[Yy]$ ]]; then
+      setup_profile
+      echo -e "${cyan}Please restart your terminal or re-source your profile file and try again.${default}"
+    else
+      echo -e "${gold}You need to manually add the following to your PATH:\n - ${magenta}\$HOME/$symlink_dir${default}"
+    fi
 
     kill -INT $$
   fi
@@ -261,12 +345,35 @@ function kubectl_pull() {
   done
 }
 
+function verify_kubeconfig() {
+  # Check if KUBECONFIG is set up to load all config files
+  local expected_pattern="find ~/.kube -name 'config*'"
+
+  if [[ -z "$KUBECONFIG" ]] || [[ ! "$KUBECONFIG" == *"config"* ]]; then
+    echo -e "${red}KUBECONFIG is not configured to load all config files from ~/.kube${default}"
+    echo -e "${gold}Would you like ktx to automatically configure your profile? (y/n)${default}"
+    read -r response
+
+    if [[ "$response" =~ ^[Yy]$ ]]; then
+      setup_profile
+      echo -e "${cyan}Please restart your terminal or re-source your profile file and try again.${default}"
+      kill -INT $$
+    else
+      echo -e "${gold}You need to manually add the KUBECONFIG configuration to your profile.${default}"
+      echo -e "${cyan}Add this line to your ~/.zshrc, ~/.bash_profile, or ~/.bashrc:${default}"
+      echo -e "${magenta}export KUBECONFIG=\$(find ~/.kube -name 'config*' | sort | tr '\n' ':')${default}"
+      kill -INT $$
+    fi
+  fi
+}
+
 check_dependencies
 verify_path
 verify_symlink
+verify_kubeconfig
 
 PS3="${cyan}Select an option: $gold"
-options=("Switch context" "Manage kubectl versions" "Get config from lastpass")
+options=("Switch context" "Manage kubectl versions" "Get config from lastpass" "Configure KTX")
 select opt in "${options[@]}"; do
   case $opt in
     "Switch context")
@@ -279,6 +386,10 @@ select opt in "${options[@]}"; do
       ;;
     "Get config from lastpass")
       kubectl_pull
+      break
+      ;;
+    "Configure KTX")
+      setup_profile
       break
       ;;
     "")
