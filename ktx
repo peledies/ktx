@@ -140,19 +140,126 @@ function switch_context() {
 
   CONTEXTS=( $(kubectl config get-contexts | awk 'NR!=1''{print $2}') )
 
-  echo -e "\n${gold}Select context to switch to:${default}"
-  PS3="${cyan}Select a kubectl context: $gold"
-  select context in "${CONTEXTS[@]}"; do
-    case "$context" in
-      "")
-        echo "${red}Invalid Option ${magenta}CTL + C to quit${default}"
-      ;;
-      *)
-        kubectl config use-context $context > /dev/null
-        echo "${gold}Kubectl Context switched to ${magenta}$context${default}"
-        break
-      ;;
-    esac
+  if [ ${#CONTEXTS[@]} -eq 0 ]; then
+    echo -e "${red}No kubectl contexts found${default}"
+    return
+  fi
+
+  local filtered_contexts=("${CONTEXTS[@]}")
+  local search_term=""
+
+  while true; do
+    echo -e "\n${gold}Available contexts${default}${cyan}${search_term:+ (filtered by: '$search_term')}${default}${gold}:${default}"
+
+    # Add filter option as the first item (0th option)
+    local menu_options=("--- Filter contexts ---" "${filtered_contexts[@]}")
+
+    PS3="${cyan}Select a kubectl context (1 to filter): $gold"
+    select context in "${menu_options[@]}"; do
+      case "$context" in
+        "")
+          echo "${red}Invalid Option ${magenta}CTL + C to quit${default}"
+          ;;
+        "--- Filter contexts ---")
+          echo -e "${cyan}Type to filter contexts (ESC to finish, Backspace to delete):${default}"
+          search_term=""
+
+          while true; do
+            # Clear previous output
+            tput clear
+
+            # Show current filter term
+            echo -e "${cyan}Filter: ${magenta}$search_term${default}"
+            echo -e "${cyan}Type to filter contexts (ESC to finish, Backspace to delete):${default}\n"
+
+            # Filter contexts based on current search term
+            filtered_contexts=()
+            if [[ -z "$search_term" ]]; then
+              filtered_contexts=("${CONTEXTS[@]}")
+            else
+              for ctx in "${CONTEXTS[@]}"; do
+                # Convert both to lowercase for case insensitive comparison
+                if [[ "${ctx,,}" == *"${search_term,,}"* ]]; then
+                  filtered_contexts+=("$ctx")
+                fi
+              done
+            fi
+
+            # Show filtered results list
+            if [ ${#filtered_contexts[@]} -eq 0 ]; then
+              echo -e "${red}No matching contexts${default}"
+            else
+              echo -e "${gold}Matching contexts:${default}"
+              for i in "${!filtered_contexts[@]}"; do
+                # Highlight the matching part in the context name
+                ctx="${filtered_contexts[$i]}"
+                if [[ -n "$search_term" ]]; then
+                  # Use sed to highlight the matching substring (case insensitive)
+                  highlighted=$(echo "$ctx" | sed -E "s/($search_term)/${magenta}\1${default}/gI")
+                  echo -e " $highlighted"
+                else
+                  echo -e " ${magenta}$ctx${default}"
+                fi
+              done
+            fi
+
+            # Read single character
+            read -rsn1 char
+
+            case "$char" in
+              $'\e')  # ESC key - exit filter mode
+                echo -e "\n${cyan}Filter applied: '${magenta}$search_term${cyan}'${default}"
+                break
+                ;;
+              $'\177'|$'\b')  # Backspace or Delete
+                if [[ ${#search_term} -gt 0 ]]; then
+                  search_term="${search_term%?}"
+                fi
+                ;;
+              '')  # Enter key - also exit filter mode
+                echo -e "\n${cyan}Filter applied: '${magenta}$search_term${cyan}'${default}"
+                break
+                ;;
+              *)  # Regular character
+                if [[ "$char" =~ [[:print:]] ]]; then
+                  search_term+="$char"
+                fi
+                ;;
+            esac
+
+          done
+
+          # Final filter application
+          if [[ -n "$search_term" ]]; then
+            filtered_contexts=()
+            for ctx in "${CONTEXTS[@]}"; do
+              if [[ "${ctx,,}" == *"${search_term,,}"* ]]; then
+                filtered_contexts+=("$ctx")
+              fi
+            done
+
+            if [ ${#filtered_contexts[@]} -eq 0 ]; then
+              echo "${red}No contexts found matching '$search_term'${default}"
+              filtered_contexts=("${CONTEXTS[@]}")
+              search_term=""
+            fi
+          else
+            filtered_contexts=("${CONTEXTS[@]}")
+          fi
+          break
+          ;;
+        *)
+          # Check if it's a valid context (not a menu option)
+          if [[ " ${CONTEXTS[@]} " =~ " ${context} " ]]; then
+            kubectl config use-context "$context" > /dev/null
+            echo "${gold}Kubectl Context switched to ${magenta}$context${default}"
+            return
+          else
+            echo "${red}Invalid selection${default}"
+          fi
+          ;;
+      esac
+    done
   done
 }
 
