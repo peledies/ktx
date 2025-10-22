@@ -4,6 +4,9 @@
 # Date: 10/09/2024
 # Description: A simple script to switch between kubectl contexts and versions, and to download new versions of kubectl.
 
+# Version
+KTX_VERSION="0.5.0"
+
 red=$(tput setaf 1)
 gold=$(tput setaf 3)
 blue=$(tput setaf 4)
@@ -32,6 +35,20 @@ function check_dependencies() {
     echo -e "${cyan}  Ubuntu/Debian: sudo apt-get install jq${default}"
     echo -e "${cyan}  CentOS/RHEL: sudo yum install jq${default}"
     kill -INT $$
+  fi
+}
+
+function check_version() {
+  # Check for updates (non-blocking, with timeout)
+  local latest_version
+  latest_version=$(curl -s --max-time 5 "https://api.github.com/repos/peledies/ktx/releases/latest" 2>/dev/null | \
+    jq -r '.tag_name' 2>/dev/null | \
+    sed 's/^v//' 2>/dev/null)
+
+  # Only show message if we successfully got a version and it's different
+  if [[ -n "$latest_version" && "$latest_version" != "null" && "$latest_version" != "$KTX_VERSION" ]]; then
+    echo -e "${gold}📦 Update available: ${magenta}v$latest_version${gold} (current: ${cyan}v$KTX_VERSION${gold})${default}"
+    echo -e "${cyan}   Run: ${magenta}brew upgrade ktx${cyan} to update${default}\n"
   fi
 }
 
@@ -475,6 +492,7 @@ function verify_kubeconfig() {
 }
 
 check_dependencies
+check_version
 verify_path
 verify_symlink
 verify_kubeconfig
