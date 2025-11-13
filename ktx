@@ -5,7 +5,7 @@
 # Description: A simple script to switch between kubectl contexts and versions, and to download new versions of kubectl.
 
 # Version
-KTX_VERSION="0.5.0"
+KTX_VERSION="0.5.1"
 
 red=$(tput setaf 1)
 gold=$(tput setaf 3)
