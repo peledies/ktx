@@ -470,10 +470,10 @@ function kubectl_pull() {
 }
 
 function verify_kubeconfig() {
-  # Check if KUBECONFIG is set up to load all config files
-  local expected_pattern="find ~/.kube -name 'config*'"
+  # Check if KUBECONFIG is set in the environment using env command
+  local kubeconfig_env=$(env | grep "^KUBECONFIG=")
 
-  if [[ -z "$KUBECONFIG" ]] || [[ ! "$KUBECONFIG" == *"config"* ]]; then
+  if [[ -z "$kubeconfig_env" ]]; then
     echo -e "${red}KUBECONFIG is not configured to load all config files from ~/.kube${default}"
     echo -e "${gold}Would you like ktx to automatically configure your profile? (y/n)${default}"
     read -r response
