@@ -5,7 +5,7 @@
 # Description: A simple script to switch between kubectl contexts and versions, and to download new versions of kubectl.
 
 # Version
-KTX_VERSION="0.5.1"
+KTX_VERSION="0.5.2"
 
 red=$(tput setaf 1)
 gold=$(tput setaf 3)
@@ -162,6 +162,20 @@ function switch_context() {
     return
   fi
 
+  # Check if fzf is installed
+  if command -v fzf &> /dev/null; then
+    # Use fzf for context selection
+    local context
+    context=$(printf '%s\n' "${CONTEXTS[@]}" | fzf --height=50% --reverse --prompt="Select Context: ")
+
+    if [ -n "$context" ]; then
+      kubectl config use-context "$context" > /dev/null
+      echo "${gold}Kubectl Context switched to ${magenta}$context${default}"
+    fi
+    return
+  fi
+
+  # Fallback to original menu-based selection if fzf is not installed
   local filtered_contexts=("${CONTEXTS[@]}")
   local search_term=""
 
